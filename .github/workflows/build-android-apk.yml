@@ -35,9 +35,24 @@ jobs:
 
       - name: Add Capacitor Android & sync web bundle
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
           npx cap add android || true
           npx cap sync android
+
+      - name: Fix Kotlin stdlib duplicate classes in Gradle
+        run: |
+          cat << 'EOF' >> android/build.gradle
+
+          subprojects {
+              configurations.configureEach {
+                  resolutionStrategy {
+                      force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
+                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
+                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+                  }
+              }
+          }
+          EOF
 
       - name: Build Debug APK with Gradle
         working-directory: ./android

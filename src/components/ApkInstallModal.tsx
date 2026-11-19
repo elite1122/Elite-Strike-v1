@@ -80,9 +80,10 @@ export const ApkInstallModal: React.FC<{ onClose: () => void }> = ({
       ? window.location.origin
       : SHARED_APP_URL;
 
-  const capacitorCommands = `npm install @capacitor/core @capacitor/cli @capacitor/android
+  const capacitorCommands = `npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
 npx cap add android
 npm run build && npx cap sync android
+printf "\\nsubprojects { configurations.configureEach { resolutionStrategy { force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22', 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22', 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22' } } }\\n" >> android/build.gradle
 cd android && ./gradlew assembleDebug`;
 
   const copyText = async (text: string, type: 'url' | 'cmd') => {

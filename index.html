@@ -2,6 +2,41 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        try {
+          var nativeFetch = window.fetch;
+          if (typeof nativeFetch === 'function') {
+            Object.defineProperty(window, 'fetch', {
+              configurable: true,
+              enumerable: true,
+              get: function () {
+                return nativeFetch;
+              },
+              set: function (fn) {
+                if (typeof fn === 'function') {
+                  nativeFetch = fn;
+                }
+              },
+            });
+          }
+        } catch (_e) {}
+
+        window.addEventListener(
+          'error',
+          function (e) {
+            if (
+              (e && typeof e.filename === 'string' && e.filename.indexOf('chrome-extension://') === 0) ||
+              (e && e.message && e.message.indexOf('Cannot set property fetch') !== -1)
+            ) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+            }
+          },
+          true
+        );
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>EliteStrike — 2D Tactical Jetpack Shooter</title>
     <meta name="description" content="2D side-scrolling tactical military shooter with jetpack physics, multi-level arenas, weapon loadouts, AI skirmishes, and real-time multiplayer rooms." />
