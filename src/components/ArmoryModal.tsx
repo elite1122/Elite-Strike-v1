@@ -22,11 +22,11 @@ export const ArmoryModal: React.FC<ArmoryModalProps> = ({
       : profile.kills.toFixed(2);
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/78 p-4">
-      <div className="w-full max-w-4xl max-h-[92vh] overflow-y-auto bg-[#161B22] border border-slate-700 rounded-lg p-6 space-y-5 shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/78 p-2.5 sm:p-4">
+      <div className="w-full max-w-4xl max-h-[94%] overflow-y-auto bg-[#161B22] border border-slate-700 rounded-lg p-3.5 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3 sm:gap-4 border-b border-slate-800 pb-3 sm:pb-4">
           <div>
-            <h2 className="font-display text-3xl font-bold text-white tracking-wide">
+            <h2 className="font-display text-xl sm:text-3xl font-bold text-white tracking-wide">
               Armory &amp; Operator Customization
             </h2>
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-1">

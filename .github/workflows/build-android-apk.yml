@@ -39,6 +39,24 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      - name: Force Horizontal Landscape Orientation & Immersive Fullscreen in AndroidManifest.xml
+        run: |
+          node -e '
+            const fs = require("fs");
+            const manifestPath = "android/app/src/main/AndroidManifest.xml";
+            if (fs.existsSync(manifestPath)) {
+              let xml = fs.readFileSync(manifestPath, "utf8");
+              if (!xml.includes("android:screenOrientation")) {
+                xml = xml.replace(
+                  /<activity([^>]*android:name="\.MainActivity"[^>]*)>/,
+                  "<activity$1 android:screenOrientation=\"sensorLandscape\">"
+                );
+                fs.writeFileSync(manifestPath, xml, "utf8");
+                console.log("Set sensorLandscape on MainActivity in AndroidManifest.xml");
+              }
+            }
+          '
+
       - name: Fix Kotlin stdlib duplicate classes in Gradle
         run: |
           cat << 'EOF' >> android/build.gradle

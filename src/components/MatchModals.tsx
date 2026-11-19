@@ -93,8 +93,14 @@ export const PauseModal: React.FC<PauseModalProps> = ({
     if (!el) return;
     const rect = el.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const rawXPct = ((clientX - rect.left) / rect.width) * 100;
-    const rawYPct = ((clientY - rect.top) / rect.height) * 100;
+    const isRotated =
+      typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+    const rawXPct = isRotated
+      ? ((clientY - rect.top) / rect.height) * 100
+      : ((clientX - rect.left) / rect.width) * 100;
+    const rawYPct = isRotated
+      ? ((rect.right - clientX) / rect.width) * 100
+      : ((clientY - rect.top) / rect.height) * 100;
     const nextLayout = updateControlLayoutPosition(layout, id, {
       xPct: rawXPct,
       yPct: rawYPct,
@@ -103,12 +109,12 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/78 p-4">
-      <div className="w-full max-w-4xl max-h-[92vh] overflow-y-auto bg-[#161B22] border border-slate-700 rounded-lg p-6 space-y-5 shadow-2xl">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/78 p-2.5 sm:p-4">
+      <div className="w-full max-w-4xl max-h-[94%] overflow-y-auto bg-[#161B22] border border-slate-700 rounded-lg p-3.5 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl">
         {/* Header + Quick Player Name Input + Tab Switcher */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 border-b border-slate-800 pb-3 sm:pb-4">
           <div>
-            <h2 className="font-display text-3xl font-bold text-white tracking-wide">
+            <h2 className="font-display text-xl sm:text-3xl font-bold text-white tracking-wide">
               {isTitleSettings ? 'Settings & Character Customizer' : 'Match Paused · Settings'}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -240,17 +246,14 @@ export const PauseModal: React.FC<PauseModalProps> = ({
               <div
                 ref={arenaRef}
                 data-testid="settings-control-drag-area"
-                className="relative w-full h-64 sm:h-72 rounded-md bg-gradient-to-b from-[#13221B] via-[#1C3126] to-[#101820] border-2 border-slate-700 overflow-hidden select-none touch-none"
+                className="relative w-full h-48 sm:h-64 md:h-72 rounded-md bg-gradient-to-b from-[#13221B] via-[#1C3126] to-[#101820] border-2 border-slate-700 overflow-hidden select-none touch-none"
               >
                 {/* Simulated HUD Top Reference Outlines */}
                 <div className="absolute top-2.5 left-3 px-2.5 py-1 rounded bg-slate-900/70 border border-slate-600/60 text-[9px] font-mono-hud text-slate-300 pointer-events-none">
                   HP / GAS ∞ ({profile.callsign})
                 </div>
-                <div className="absolute top-2.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded bg-slate-900/70 border border-slate-600/60 text-[9px] font-mono-hud text-slate-300 pointer-events-none">
+                <div className="absolute top-2.5 right-3 px-3 py-1 rounded bg-slate-900/70 border border-slate-600/60 text-[9px] font-mono-hud text-slate-300 pointer-events-none">
                   WEAPON DOCK · ∞
-                </div>
-                <div className="absolute top-2.5 right-3 px-2.5 py-1 rounded bg-slate-900/70 border border-slate-600/60 text-[9px] font-mono-hud text-slate-300 pointer-events-none">
-                  MINIMAP
                 </div>
 
                 {/* Subtle Grid Lines */}
@@ -471,8 +474,8 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
   const rank = getLevelFromXp(profile.xp);
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/78 p-4">
-      <div className="w-full max-w-xl bg-[#161B22] border border-slate-700 rounded-lg p-6 space-y-5 shadow-2xl">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/78 p-2.5 sm:p-4">
+      <div className="w-full max-w-xl max-h-[94%] overflow-y-auto bg-[#161B22] border border-slate-700 rounded-lg p-3.5 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div

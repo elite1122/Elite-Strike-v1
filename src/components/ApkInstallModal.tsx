@@ -83,6 +83,7 @@ export const ApkInstallModal: React.FC<{ onClose: () => void }> = ({
   const capacitorCommands = `npm install @capacitor/core@^6.0.0 @capacitor/cli@^6.0.0 @capacitor/android@^6.0.0
 npx cap add android
 npm run build && npx cap sync android
+node -e "const fs=require('fs'),p='android/app/src/main/AndroidManifest.xml';if(fs.existsSync(p)){let x=fs.readFileSync(p,'utf8');if(!x.includes('android:screenOrientation'))x=x.replace('<activity','<activity android:screenOrientation=\\"sensorLandscape\\"');fs.writeFileSync(p,x);}"
 printf "\\nsubprojects { configurations.configureEach { resolutionStrategy { force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22', 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22', 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22' } } }\\n" >> android/build.gradle
 cd android && ./gradlew assembleDebug`;
 
@@ -103,10 +104,10 @@ cd android && ./gradlew assembleDebug`;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 pointer-events-auto"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-black/75 p-2.5 sm:p-4 pointer-events-auto"
       data-testid="apk-install-modal"
     >
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-[#161B22] border border-slate-700 shadow-2xl text-slate-100">
+      <div className="w-full max-w-2xl max-h-[94%] overflow-y-auto rounded-lg bg-[#161B22] border border-slate-700 shadow-2xl text-slate-100">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-[#0D1117]">
           <div className="flex items-center gap-2.5">

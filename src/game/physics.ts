@@ -23,16 +23,16 @@ import {
 import { GRENADE_STATS, MELEE_STATS, WEAPONS } from './weapons';
 import { getWeatherStateForMap } from './weather';
 
-const GRAVITY = 1320;
-const MAX_FALL_SPEED = 860;
-const RUN_SPEED = 310;
-const CROUCH_SPEED = 165;
-const GROUND_ACCEL = 2500;
-const AIR_ACCEL = 1550;
-const GROUND_FRICTION = 2400;
-const JUMP_VELOCITY = -545;
-const JETPACK_THRUST = 2150;
-const MAX_JETPACK_UP_SPEED = -420;
+const GRAVITY = 1080;
+const MAX_FALL_SPEED = 680;
+const RUN_SPEED = 215;
+const CROUCH_SPEED = 118;
+const GROUND_ACCEL = 1550;
+const AIR_ACCEL = 980;
+const GROUND_FRICTION = 1850;
+const JUMP_VELOCITY = -465;
+const JETPACK_THRUST = 1680;
+const MAX_JETPACK_UP_SPEED = -315;
 const STAND_W = 28;
 const STAND_H = 48;
 const CROUCH_H = 32;

@@ -271,12 +271,43 @@ export default function App() {
     });
   }, []);
 
+  const [viewportSize, setViewportSize] = useState<{ w: number; h: number }>(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    h: typeof window !== 'undefined' ? window.innerHeight : 720,
+  }));
+
+  const tryLockLandscape = useCallback(() => {
+    try {
+      const scr = window.screen as Screen & {
+        orientation?: { lock?: (mode: string) => Promise<void> };
+      };
+      if (scr?.orientation?.lock) {
+        scr.orientation.lock('landscape').catch(() => {});
+      }
+    } catch {
+      // Ignore orientation lock restrictions in desktop browsers
+    }
+  }, []);
+
   useEffect(() => {
     setIsTouchDevice(
       typeof window !== 'undefined' &&
         ('ontouchstart' in window || navigator.maxTouchPoints > 0),
     );
-  }, []);
+    const handleViewportChange = () => {
+      setViewportSize({
+        w: window.innerWidth,
+        h: window.innerHeight,
+      });
+    };
+    tryLockLandscape();
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('orientationchange', handleViewportChange);
+    };
+  }, [tryLockLandscape]);
 
   const syncHudFromWorld = useCallback((w: MatchWorld) => {
     const me = w.soldiers.find((s) => s.id === localPlayerIdRef.current) ?? null;
@@ -724,11 +755,27 @@ export default function App() {
     const getDpr = () =>
       isAutomation ? 1 : Math.min(window.devicePixelRatio || 1, 2);
 
+    const toLogicalCanvasCoords = (clientX: number, clientY: number) => {
+      if (window.innerHeight > window.innerWidth) {
+        return {
+          x: clientY,
+          y: window.innerWidth - clientX,
+        };
+      }
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top,
+      };
+    };
+
     const resizeCanvas = () => {
       const dpr = getDpr();
       const rect = canvas.getBoundingClientRect();
-      const w = Math.max(320, Math.floor(rect.width));
-      const h = Math.max(240, Math.floor(rect.height));
+      const rawW = canvas.offsetWidth || rect.width;
+      const rawH = canvas.offsetHeight || rect.height;
+      const w = Math.max(320, Math.floor(rawW));
+      const h = Math.max(240, Math.floor(rawH));
       if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
         canvas.width = Math.floor(w * dpr);
         canvas.height = Math.floor(h * dpr);
@@ -738,6 +785,7 @@ export default function App() {
     resizeCanvas();
     const ro = new ResizeObserver(resizeCanvas);
     ro.observe(canvas);
+    window.addEventListener('resize', resizeCanvas);
 
     let rafId = 0;
     let yieldTimer: number | null = null;
@@ -766,9 +814,10 @@ export default function App() {
       if (tb.aimAngle !== null && tb.fireHeld) {
         aimAngle = tb.aimAngle;
       } else if (soldier) {
-        const rect = canvas.getBoundingClientRect();
-        const localX = mouseScreenRef.current.x - rect.left;
-        const localY = mouseScreenRef.current.y - rect.top;
+        const { x: localX, y: localY } = toLogicalCanvasCoords(
+          mouseScreenRef.current.x,
+          mouseScreenRef.current.y,
+        );
         const scale = lastCamRef.current.scale || 1;
         const worldMouseX = lastCamRef.current.camX + localX / scale;
         const worldMouseY = lastCamRef.current.camY + localY / scale;
@@ -892,9 +941,10 @@ export default function App() {
 
         // Tactical Aim Crosshair when playing
         if (state === 'playing') {
-          const rect = canvas.getBoundingClientRect();
-          const mx = mouseScreenRef.current.x - rect.left;
-          const my = mouseScreenRef.current.y - rect.top;
+          const { x: mx, y: my } = toLogicalCanvasCoords(
+            mouseScreenRef.current.x,
+            mouseScreenRef.current.y,
+          );
           ctx.strokeStyle = 'rgba(248, 250, 252, 0.9)';
           ctx.lineWidth = 2;
           ctx.beginPath();
@@ -955,6 +1005,7 @@ export default function App() {
       cancelAnimationFrame(rafId);
       if (yieldTimer !== null) clearTimeout(yieldTimer);
       ro.disconnect();
+      window.removeEventListener('resize', resizeCanvas);
     };
   }, [finalizeMatch, processAudioEvents, syncHudFromWorld]);
 
@@ -962,8 +1013,35 @@ export default function App() {
     settings.touchControls === 'always' ||
     (settings.touchControls === 'auto' && isTouchDevice);
 
+  // If the phone is physically held in portrait and the OS hasn't rotated the WebView yet,
+  // automatically rotate the entire app container 90deg into horizontal landscape mode
+  const isPortraitRotated = viewportSize.h > viewportSize.w;
+
   return (
-    <main className="relative w-screen h-screen overflow-hidden bg-[#12151A]">
+    <main
+      data-landscape-rotated={isPortraitRotated ? 'true' : 'false'}
+      onPointerDown={() => {
+        tryLockLandscape();
+      }}
+      style={
+        isPortraitRotated
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: `${viewportSize.w}px`,
+              width: `${viewportSize.h}px`,
+              height: `${viewportSize.w}px`,
+              transformOrigin: '0 0',
+              transform: 'rotate(90deg)',
+            }
+          : undefined
+      }
+      className={
+        isPortraitRotated
+          ? 'overflow-hidden bg-[#12151A]'
+          : 'relative w-screen h-screen overflow-hidden bg-[#12151A]'
+      }
+    >
       {/* Full-Bleed Game Viewport Canvas */}
       <canvas
         ref={canvasRef}
@@ -979,9 +1057,17 @@ export default function App() {
           if (e.button === 0) {
             // Check if the player clicked directly on a weapon pickup on the battlefield
             const rect = e.currentTarget.getBoundingClientRect();
+            const localX =
+              window.innerHeight > window.innerWidth
+                ? e.clientY
+                : e.clientX - rect.left;
+            const localY =
+              window.innerHeight > window.innerWidth
+                ? window.innerWidth - e.clientX
+                : e.clientY - rect.top;
             const scale = lastCamRef.current.scale || 1;
-            const worldX = lastCamRef.current.camX + (e.clientX - rect.left) / scale;
-            const worldY = lastCamRef.current.camY + (e.clientY - rect.top) / scale;
+            const worldX = lastCamRef.current.camX + localX / scale;
+            const worldY = lastCamRef.current.camY + localY / scale;
             const clickedGun = worldRef.current
               ? findClickedWeaponPickup(worldRef.current, worldX, worldY, 54)
               : null;
@@ -1074,6 +1160,7 @@ export default function App() {
               touchControls: showTouchControls ? 'off' : 'always',
             })
           }
+          isPortraitRotated={isPortraitRotated}
         />
       )}
 

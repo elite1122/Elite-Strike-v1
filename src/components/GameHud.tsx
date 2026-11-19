@@ -111,7 +111,7 @@ export const MAP_UI_THEMES: Record<MapId, MapUiTheme> = {
 };
 
 const PineappleGrenadeSvg: React.FC<{ className?: string }> = ({
-  className = 'w-7 h-8',
+  className = 'w-6 h-7 sm:w-7 sm:h-8',
 }) => (
   <svg viewBox="0 0 36 42" className={className} aria-hidden="true">
     {/* Fuse & Spoon Lever */}
@@ -129,18 +129,15 @@ const PineappleGrenadeSvg: React.FC<{ className?: string }> = ({
 );
 
 const ClenchedFistSvg: React.FC<{ className?: string }> = ({
-  className = 'w-9 h-9',
+  className = 'w-7 h-7 sm:w-9 sm:h-9',
 }) => (
   <svg viewBox="0 0 44 44" className={className} aria-hidden="true">
     <g fill="rgba(248, 250, 252, 0.92)" stroke="rgba(30, 41, 59, 0.7)" strokeWidth="1.4">
-      {/* Forearm & Fist */}
       <polygon points="18,26 30,22 36,34 22,39" />
-      {/* Knuckles */}
       <rect x="13" y="13" width="6" height="9" rx="2.5" transform="rotate(-15 16 17)" />
       <rect x="18" y="11" width="6" height="10" rx="2.5" transform="rotate(-12 21 16)" />
       <rect x="23" y="11" width="6" height="10" rx="2.5" transform="rotate(-10 26 16)" />
       <rect x="28" y="13" width="5.5" height="9" rx="2.5" transform="rotate(-8 31 17)" />
-      {/* Thumb */}
       <rect x="12" y="19" width="13" height="6" rx="2.5" transform="rotate(14 18 22)" />
     </g>
   </svg>
@@ -169,14 +166,15 @@ interface GameHudProps {
   isEditingControls: boolean;
   onToggleEditControls: () => void;
   touchBridge: React.MutableRefObject<TouchInputBridge>;
-  minimapCanvasRef: React.RefObject<HTMLCanvasElement | null>;
-  minimapZoomed: boolean;
-  onToggleMinimapZoom: () => void;
+  minimapCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
+  minimapZoomed?: boolean;
+  onToggleMinimapZoom?: () => void;
   scopeZoomLevel: number;
   onCycleScopeZoom: () => void;
   onPause: () => void;
   onToggleMute: () => void;
   onToggleTouch: () => void;
+  isPortraitRotated?: boolean;
 }
 
 export const GameHud: React.FC<GameHudProps> = ({
@@ -188,24 +186,18 @@ export const GameHud: React.FC<GameHudProps> = ({
   isEditingControls,
   onToggleEditControls,
   touchBridge,
-  minimapCanvasRef,
-  minimapZoomed,
-  onToggleMinimapZoom,
   scopeZoomLevel,
   onCycleScopeZoom,
   onPause,
   onToggleMute,
   onToggleTouch,
+  isPortraitRotated = false,
 }) => {
   const moveStickRef = useRef<HTMLDivElement | null>(null);
   const aimStickRef = useRef<HTMLDivElement | null>(null);
   const [draggingControlId, setDraggingControlId] = useState<DraggableControlId | null>(null);
-  const buttonDragRef = useRef<{
-    id: DraggableControlId | null;
-    startX: number;
-    startY: number;
-    moved: boolean;
-  }>({ id: null, startX: 0, startY: 0, moved: false });
+  const [moveKnobOffset, setMoveKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [fireKnobOffset, setFireKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const theme = MAP_UI_THEMES[worldSnapshot.mapId] ?? MAP_UI_THEMES.forest;
   const layout = settings.controlLayout ?? DEFAULT_CONTROL_LAYOUT;
@@ -229,42 +221,85 @@ export const GameHud: React.FC<GameHudProps> = ({
   const mins = Math.floor(remainingSec / 60);
   const secs = String(remainingSec % 60).padStart(2, '0');
 
+  // Helper that maps pointer deltas and viewport percentages accurately in both native landscape
+  // and CSS 90-degree auto-rotated portrait-to-landscape mode
+  const getRelativeDelta = (
+    el: HTMLElement,
+    clientX: number,
+    clientY: number,
+  ): { dx: number; dy: number; radius: number } => {
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    if (isPortraitRotated) {
+      return {
+        dx: clientY - cy,
+        dy: -(clientX - cx),
+        radius: Math.max(24, Math.min(rect.width, rect.height) * 0.44),
+      };
+    }
+    return {
+      dx: clientX - cx,
+      dy: clientY - cy,
+      radius: Math.max(24, Math.min(rect.width, rect.height) * 0.44),
+    };
+  };
+
   const moveControlToViewport = (id: DraggableControlId, clientX: number, clientY: number) => {
+    if (!isEditingControls) return;
     const vw = Math.max(1, window.innerWidth);
     const vh = Math.max(1, window.innerHeight);
-    const nextLayout = updateControlLayoutPosition(layout, id, {
-      xPct: (clientX / vw) * 100,
-      yPct: (clientY / vh) * 100,
-    });
+    const xPct = isPortraitRotated
+      ? (clientY / vh) * 100
+      : (clientX / vw) * 100;
+    const yPct = isPortraitRotated
+      ? ((vw - clientX) / vw) * 100
+      : (clientY / vh) * 100;
+    const nextLayout = updateControlLayoutPosition(layout, id, { xPct, yPct });
     onUpdateSettings({ controlLayout: nextLayout });
   };
 
   const handleMovePointer = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = moveStickRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = e.clientX - cx;
-    const dy = e.clientY - cy;
-    const normX = Math.max(-1, Math.min(1, dx / (rect.width * 0.42)));
-    touchBridge.current.moveX = Math.abs(normX) < 0.14 ? 0 : normX;
-    touchBridge.current.crouchHeld = dy > rect.height * 0.25;
-    touchBridge.current.jetpackHeld = dy < -rect.height * 0.22;
+    const { dx, dy, radius } = getRelativeDelta(el, e.clientX, e.clientY);
+
+    // Clamp visual thumb knob displacement inside the stick ring
+    const dist = Math.hypot(dx, dy);
+    const maxKnob = radius * 0.72;
+    const clampedScale = dist > maxKnob && dist > 0 ? maxKnob / dist : 1;
+    setMoveKnobOffset({ x: dx * clampedScale, y: dy * clampedScale });
+
+    // Smooth analog response curve with 18% deadzone so thumb movement is never twitchy or overly fast
+    const rawX = Math.max(-1, Math.min(1, dx / radius));
+    const deadzone = 0.18;
+    if (Math.abs(rawX) < deadzone) {
+      touchBridge.current.moveX = 0;
+    } else {
+      const normalized = (Math.abs(rawX) - deadzone) / (1 - deadzone);
+      touchBridge.current.moveX =
+        Math.sign(rawX) * Math.pow(Math.min(1, normalized), 1.35);
+    }
+
+    const rawY = Math.max(-1, Math.min(1, dy / radius));
+    touchBridge.current.crouchHeld = rawY > 0.42;
+    touchBridge.current.jetpackHeld = rawY < -0.32;
   };
 
   const handleAimPointer = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = aimStickRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = e.clientX - cx;
-    const dy = e.clientY - cy;
-    if (Math.hypot(dx, dy) > 8) {
+    const { dx, dy, radius } = getRelativeDelta(el, e.clientX, e.clientY);
+
+    const dist = Math.hypot(dx, dy);
+    const maxKnob = radius * 0.72;
+    const clampedScale = dist > maxKnob && dist > 0 ? maxKnob / dist : 1;
+    setFireKnobOffset({ x: dx * clampedScale, y: dy * clampedScale });
+
+    if (dist > 7) {
       touchBridge.current.aimAngle = Math.atan2(dy, dx);
     }
-    touchBridge.current.fireHeld = true;
+    touchBridge.current.fireHeld = dist > 10;
   };
 
   return (
@@ -272,187 +307,162 @@ export const GameHud: React.FC<GameHudProps> = ({
       data-testid="game-hud"
       data-map-theme={theme.id}
       data-editing-controls={isEditingControls ? 'true' : 'false'}
-      className="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-2.5 md:p-4 select-none"
+      className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-1.5 sm:p-2.5 md:p-3.5 select-none"
     >
       {/* Low-HP peripheral danger vignette */}
       {player && player.alive && player.hp <= 30 && (
         <div
-          className="fixed inset-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            boxShadow: 'inset 0 0 90px rgba(220, 38, 38, 0.55)',
+            boxShadow: 'inset 0 0 80px rgba(220, 38, 38, 0.55)',
           }}
         />
       )}
 
-      {/* TOP HUD BAR: Reference-Matched Chamfered Vitality Dock + Weapon & Swap Dock + Per-Map Minimap */}
-      <div className="flex items-start justify-between gap-3">
-        {/* TOP-LEFT: Angled Chamfered Vitality & Jetpack Dock + Biome Status */}
-        <div className="flex flex-col items-start gap-2">
+      {/* TOP HUD BAR: Responsive Vitality Dock (Top-Left) + Weapon Dock (Top-Center/Right) + Compact Utility Icons */}
+      <div className="flex items-start justify-between gap-2">
+        {/* TOP-LEFT: Angled Chamfered Vitality & Jetpack Dock + Slim Single-Line Status Strip */}
+        <div className="flex flex-col items-start gap-1">
           {player && (
-            <div className="flex items-start gap-3">
-              {/* Chamfered Polygon Vitality & Jetpack Frame */}
-              <div className="relative pointer-events-auto px-4 py-2 min-w-[272px] sm:min-w-[300px] drop-shadow-lg">
-                <svg
-                  viewBox="0 0 300 76"
-                  preserveAspectRatio="none"
-                  className="absolute inset-0 w-full h-full pointer-events-none"
-                  aria-hidden="true"
-                >
-                  <polygon
-                    points="2,2 298,2 268,74 2,74"
-                    fill={theme.panelBg}
-                    stroke={theme.borderColor}
-                    strokeWidth="3.5"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+            <div className="relative pointer-events-auto px-2.5 sm:px-3.5 py-1.5 w-[198px] sm:w-[272px] drop-shadow-lg">
+              <svg
+                viewBox="0 0 300 76"
+                preserveAspectRatio="none"
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                aria-hidden="true"
+              >
+                <polygon
+                  points="2,2 298,2 268,74 2,74"
+                  fill={theme.panelBg}
+                  stroke={theme.borderColor}
+                  strokeWidth="3.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
 
-                <div className="relative z-10 flex items-center gap-3 pr-5">
-                  <div className="flex-1 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-mono-hud font-bold text-amber-300 leading-none">
-                      <span data-testid="hud-player-name" className="truncate max-w-[160px]">
-                        {player.name}
-                      </span>
-                      <span className="text-white/85">HP {Math.ceil(player.hp)}</span>
-                    </div>
-                    {/* Heart + Health Bar Row */}
-                    <div className="flex items-center gap-2">
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="w-4 h-4 shrink-0 fill-white drop-shadow"
-                        aria-hidden="true"
-                      >
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-                      </svg>
-                      <div className="h-3 flex-1 rounded-xs bg-black/40 border border-white/85 overflow-hidden p-0.5">
-                        <div
-                          className="h-full transition-all duration-100"
-                          style={{
-                            width: `${Math.max(0, Math.min(100, (player.hp / player.maxHp) * 100))}%`,
-                            background: theme.hpGradient,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Jetpack Icon + Unlimited Gas Bar Row */}
-                    <div className="flex items-center gap-2">
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="w-4 h-4 shrink-0 fill-white drop-shadow"
-                        aria-hidden="true"
-                      >
-                        <path d="M12 2L8 7.5V16h8V7.5L12 2zm-2 15l2 5 2-5h-4z" />
-                      </svg>
-                      <div className="relative h-3 flex-1 rounded-xs bg-black/40 border border-white/85 overflow-hidden p-0.5">
-                        <div
-                          className="h-full transition-all duration-75"
-                          style={{
-                            width: '100%',
-                            background: theme.fuelGradient,
-                          }}
-                        />
-                        <span
-                          title="Unlimited Jetpack Gas"
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 font-mono-hud text-[10px] font-extrabold text-white leading-none drop-shadow"
-                        >
-                          ∞
-                        </span>
-                      </div>
+              <div className="relative z-10 flex items-center gap-2 pr-3 sm:pr-4">
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-mono-hud font-bold text-amber-300 leading-none">
+                    <span data-testid="hud-player-name" className="truncate max-w-[100px] sm:max-w-[150px]">
+                      {player.name}
+                    </span>
+                    <span className="text-white/90">HP {Math.ceil(player.hp)}</span>
+                  </div>
+                  {/* Heart + Health Bar Row */}
+                  <div className="flex items-center gap-1.5">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 fill-white drop-shadow"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                    </svg>
+                    <div className="h-2.5 sm:h-3 flex-1 rounded-xs bg-black/45 border border-white/85 overflow-hidden p-0.5">
+                      <div
+                        className="h-full transition-all duration-100"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (player.hp / player.maxHp) * 100))}%`,
+                          background: theme.hpGradient,
+                        }}
+                      />
                     </div>
                   </div>
 
-                  {/* Integrated Circular || Pause Button inside top-left panel */}
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={(e) => {
-                      e.currentTarget.blur();
-                      onPause();
-                    }}
-                    aria-label="Pause [Esc]"
-                    title="Pause [Esc]"
-                    className="w-8 h-8 rounded-full border-2 border-white/95 bg-white/15 hover:bg-white/30 flex items-center justify-center text-white transition-colors shrink-0"
-                  >
-                    <span className="flex items-center gap-1">
-                      <span className="w-1 h-3.5 bg-white rounded-xs" />
-                      <span className="w-1 h-3.5 bg-white rounded-xs" />
-                    </span>
-                  </button>
+                  {/* Jetpack Icon + Unlimited Gas Bar Row */}
+                  <div className="flex items-center gap-1.5">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 fill-white drop-shadow"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 2L8 7.5V16h8V7.5L12 2zm-2 15l2 5 2-5h-4z" />
+                    </svg>
+                    <div className="relative h-2.5 sm:h-3 flex-1 rounded-xs bg-black/45 border border-white/85 overflow-hidden p-0.5">
+                      <div
+                        className="h-full transition-all duration-75"
+                        style={{
+                          width: '100%',
+                          background: theme.fuelGradient,
+                        }}
+                      />
+                      <span
+                        title="Unlimited Jetpack Gas"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 font-mono-hud text-[9px] sm:text-[10px] font-extrabold text-white leading-none drop-shadow"
+                      >
+                        ∞
+                      </span>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Integrated Circular || Pause Button inside top-left panel */}
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  data-testid="hud-pause-btn"
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    onPause();
+                  }}
+                  aria-label="Pause [Esc]"
+                  title="Pause [Esc]"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-white/95 bg-white/15 hover:bg-white/30 flex items-center justify-center text-white transition-colors shrink-0"
+                >
+                  <span className="flex items-center gap-0.5 sm:gap-1">
+                    <span className="w-0.5 sm:w-1 h-3 sm:h-3.5 bg-white rounded-xs" />
+                    <span className="w-0.5 sm:w-1 h-3 sm:h-3.5 bg-white rounded-xs" />
+                  </span>
+                </button>
               </div>
             </div>
           )}
 
-          {/* Distinct Map UI Theme Biome Tag + Score / Timer Pill */}
-          <div className="flex items-center gap-2.5 pl-20 pointer-events-auto">
-            <div
-              className="px-3 py-1.5 rounded-sm text-xs font-mono-hud text-white shadow-md flex flex-col gap-0.5"
-              style={{
-                backgroundColor: theme.panelBg,
-                border: `2.5px solid ${theme.borderColor}`,
-                backdropFilter: 'blur(4px)',
-                textShadow: '0 1px 2px rgba(0,0,0,0.85)',
-              }}
+          {/* Ultra-Compact Single-Line Status Pill (Never blocks mobile gameplay view) */}
+          <div
+            className="px-2 py-0.5 rounded-xs text-[9px] sm:text-[10px] font-mono-hud text-white shadow flex flex-wrap items-center gap-x-2 gap-y-0.5 max-w-[260px] sm:max-w-[380px] pointer-events-none"
+            style={{
+              backgroundColor: theme.panelBg,
+              border: `1.5px solid ${theme.borderColor}`,
+              backdropFilter: 'blur(3px)',
+              textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+            }}
+          >
+            <span className="font-extrabold" style={{ color: theme.accentColor }}>
+              {worldSnapshot.mode === 'tdm'
+                ? `A:${worldSnapshot.alphaKills} B:${worldSnapshot.bravoKills}`
+                : worldSnapshot.mode === 'survival'
+                  ? `W${worldSnapshot.wave}/5`
+                  : `KILLS ${player?.kills ?? 0}`}
+            </span>
+            {worldSnapshot.mode !== 'training' && (
+              <span className="font-bold text-white">{mins}:{secs}</span>
+            )}
+            <span
+              data-testid="hud-weather-status"
+              className="text-sky-200 truncate max-w-[120px] sm:max-w-[160px]"
             >
-              <div className="flex items-center gap-2">
-                <span
-                  className="text-[10px] font-extrabold uppercase tracking-wider"
-                  style={{ color: theme.accentColor }}
-                >
-                  {theme.badgeLabel}
-                </span>
-                {worldSnapshot.mode !== 'training' && (
-                  <span className="text-xs font-bold text-white">
-                    {mins}:{secs}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-white">
-                {worldSnapshot.mode === 'tdm' ? (
-                  <span>
-                    ALPHA {worldSnapshot.alphaKills} · BRAVO {worldSnapshot.bravoKills}
-                  </span>
-                ) : worldSnapshot.mode === 'survival' ? (
-                  <span>
-                    WAVE {worldSnapshot.wave}/5 · LIVES {player?.livesRemaining ?? 0}
-                  </span>
-                ) : (
-                  <span>
-                    KILLS {player?.kills ?? 0} · ARMOR {Math.round(player?.armor ?? 0)}
-                  </span>
-                )}
-              </div>
-              <div className="text-[9px] font-extrabold uppercase tracking-wider text-amber-300 truncate max-w-[235px]">
-                SECTOR: {worldSnapshot.minimap.currentZone ?? 'OPEN BATTLEFRONT'}
-              </div>
-              <div
-                data-testid="hud-weather-status"
-                className="text-[9px] font-extrabold uppercase tracking-wider text-sky-200 truncate max-w-[235px]"
+              {weather.label}
+            </span>
+            {worldSnapshot.mapMechanic && (
+              <span
+                data-testid="hud-map-mechanic-status"
+                className={`font-extrabold uppercase truncate max-w-[180px] sm:max-w-[230px] ${
+                  worldSnapshot.mapMechanic.active
+                    ? 'text-emerald-300'
+                    : 'text-amber-200'
+                }`}
               >
-                WEATHER: {weather.label} ({weather.timeRemainingSec}s)
-              </div>
-              {worldSnapshot.mapMechanic && (
-                <div
-                  data-testid="hud-map-mechanic-status"
-                  className={`text-[9px] font-extrabold uppercase tracking-wider truncate max-w-[235px] ${
-                    worldSnapshot.mapMechanic.active
-                      ? 'text-emerald-300'
-                      : 'text-slate-200'
-                  }`}
-                >
-                  {worldSnapshot.mapMechanic.label}
-                </div>
-              )}
-            </div>
+                {worldSnapshot.mapMechanic.label}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* TOP-CENTER / RIGHT: Reference-Matched Angled Weapon Dock + Circular Weapon Swap Ring + Grenade */}
+        {/* TOP-CENTER / RIGHT: Responsive Angled Weapon Dock + Circular Weapon Swap Ring + Grenade */}
         {player && activeSlot && activeWeapon && (
           <div
             data-testid="hud-weapon-dock"
-            className="relative flex items-start pointer-events-auto mt-0.5"
+            className="relative flex items-start pointer-events-auto"
           >
             {/* Overlapping Circular Secondary Weapon Swap Button */}
             {secondarySlot && (
@@ -465,16 +475,16 @@ export const GameHud: React.FC<GameHudProps> = ({
                 }}
                 aria-label="Swap primary and secondary weapon [Q]"
                 title="Swap Weapon [Q / 1 / 2]"
-                className="relative z-20 -mr-5 mt-5 w-24 h-24 rounded-full flex flex-col items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-xl"
+                className="relative z-20 -mr-3.5 sm:-mr-5 mt-2 sm:mt-4 w-14 h-14 sm:w-20 sm:h-20 rounded-full flex flex-col items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-xl"
                 style={{
                   backgroundColor: theme.panelBg,
-                  border: `3.5px solid ${theme.borderColor}`,
+                  border: `3px solid ${theme.borderColor}`,
                   backdropFilter: 'blur(4px)',
                 }}
               >
                 <svg
                   viewBox="0 0 80 80"
-                  className="absolute inset-1 w-[86px] h-[86px] pointer-events-none opacity-90"
+                  className="absolute inset-0.5 w-full h-full pointer-events-none opacity-90"
                   aria-hidden="true"
                 >
                   <path
@@ -496,7 +506,7 @@ export const GameHud: React.FC<GameHudProps> = ({
                 </svg>
                 <WeaponSilhouetteSvg
                   weaponId={secondarySlot.weaponId}
-                  className="w-20 h-9 relative z-10 drop-shadow"
+                  className="w-11 h-5 sm:w-16 sm:h-7 relative z-10 drop-shadow"
                 />
               </button>
             )}
@@ -505,8 +515,8 @@ export const GameHud: React.FC<GameHudProps> = ({
             <div className="flex items-center">
               <div
                 onClick={() => touchBridge.current.triggerReload()}
-                title="Click to Reload [R]"
-                className="relative px-7 py-2 min-w-[242px] sm:min-w-[266px] cursor-pointer drop-shadow-lg"
+                title="Tap to Reload [R]"
+                className="relative px-4 sm:px-6 py-1 sm:py-1.5 min-w-[162px] sm:min-w-[236px] cursor-pointer drop-shadow-lg"
               >
                 <svg
                   viewBox="0 0 266 72"
@@ -529,15 +539,15 @@ export const GameHud: React.FC<GameHudProps> = ({
                 >
                   <WeaponSilhouetteSvg
                     weaponId={activeSlot.weaponId}
-                    className="w-36 h-12 drop-shadow"
+                    className="w-24 h-8 sm:w-32 sm:h-10 drop-shadow"
                   />
-                  <div className="w-full flex items-center justify-between px-3 -mt-1 font-mono-hud text-sm sm:text-base font-extrabold text-white tracking-widest">
+                  <div className="w-full flex items-center justify-between px-2 -mt-0.5 font-mono-hud text-xs sm:text-sm font-extrabold text-white tracking-wider">
                     <span>
                       {player.reloadTimer > 0
                         ? 'RLD'
                         : String(activeSlot.mag).padStart(3, '0')}
                     </span>
-                    <span className="text-[11px] font-bold opacity-90 uppercase">
+                    <span className="text-[9px] sm:text-[10px] font-bold opacity-90 uppercase truncate max-w-[72px] sm:max-w-none">
                       {activeWeapon.shortName}
                     </span>
                     <span title="Unlimited Ammo" aria-label="Unlimited reserve ammo">
@@ -557,15 +567,15 @@ export const GameHud: React.FC<GameHudProps> = ({
                 }}
                 aria-label="Throw Frag Grenade [G] (Unlimited)"
                 title="Throw Frag Grenade [G] · Unlimited (∞)"
-                className="-ml-3.5 relative z-20 w-16 h-16 rounded-full flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-xl"
+                className="-ml-2.5 sm:-ml-3.5 relative z-20 w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-xl"
                 style={{
                   backgroundColor: theme.panelBg,
-                  border: `3.5px solid ${theme.borderColor}`,
+                  border: `3px solid ${theme.borderColor}`,
                   backdropFilter: 'blur(4px)',
                 }}
               >
-                <PineappleGrenadeSvg className="w-8 h-9" />
-                <span className="absolute bottom-1 right-2 font-mono-hud text-xs font-extrabold text-white drop-shadow">
+                <PineappleGrenadeSvg className="w-6 h-7 sm:w-7 sm:h-8" />
+                <span className="absolute bottom-0.5 right-1.5 font-mono-hud text-[10px] sm:text-xs font-extrabold text-white drop-shadow">
                   ∞
                 </span>
               </button>
@@ -584,21 +594,21 @@ export const GameHud: React.FC<GameHudProps> = ({
                   );
                 }}
                 aria-label={`Pick up ${WEAPONS[worldSnapshot.nearbyWeaponPickup.weaponId]?.name ?? 'Weapon'}`}
-                className="ml-3 mt-2 px-3.5 py-1.5 rounded-md flex items-center gap-2.5 text-white shadow-xl transition-transform hover:scale-105 active:scale-95 animate-pulse"
+                className="ml-2 mt-1 px-2.5 py-1 rounded-md flex items-center gap-1.5 text-white shadow-xl transition-transform hover:scale-105 active:scale-95 animate-pulse"
                 style={{
-                  backgroundColor: 'rgba(20, 83, 45, 0.88)',
-                  border: `2.5px solid #4ADE80`,
+                  backgroundColor: 'rgba(20, 83, 45, 0.9)',
+                  border: `2px solid #4ADE80`,
                 }}
               >
                 <WeaponSilhouetteSvg
                   weaponId={worldSnapshot.nearbyWeaponPickup.weaponId}
-                  className="w-14 h-6"
+                  className="w-10 h-5 sm:w-12 sm:h-6"
                 />
                 <div className="text-left leading-tight">
-                  <div className="text-[9px] font-mono-hud font-bold uppercase text-emerald-300">
-                    CLICK TO EQUIP
+                  <div className="text-[8px] font-mono-hud font-bold uppercase text-emerald-300">
+                    EQUIP
                   </div>
-                  <div className="text-xs font-mono-hud font-extrabold uppercase text-white">
+                  <div className="text-[10px] sm:text-xs font-mono-hud font-extrabold uppercase text-white">
                     {WEAPONS[worldSnapshot.nearbyWeaponPickup.weaponId]?.shortName}
                   </div>
                 </div>
@@ -607,35 +617,9 @@ export const GameHud: React.FC<GameHudProps> = ({
           </div>
         )}
 
-        {/* TOP-RIGHT: Real-Time Tactical Minimap + Utility Controls styled per Map Theme */}
-        <div className="flex flex-col items-end gap-2">
+        {/* TOP-RIGHT: Minimal Reload & Mute Utility Buttons (NO Enemy Location Minimap, NO In-Game Drag Button) */}
+        <div className="flex flex-col items-end gap-1.5">
           <div className="flex items-center gap-1.5 pointer-events-auto">
-            {/* Live HUD Drag Controls Mode Button */}
-            <button
-              type="button"
-              tabIndex={-1}
-              data-testid="hud-edit-controls-btn"
-              onClick={(e) => {
-                e.currentTarget.blur();
-                onToggleEditControls();
-              }}
-              aria-label="Drag and reposition HUD controls"
-              title="Drag & Reposition Controls"
-              className={`h-9 px-2.5 flex items-center gap-1.5 rounded-full text-xs font-mono-hud font-bold text-white transition-transform active:scale-95 ${
-                isEditingControls ? 'ring-2 ring-sky-400' : ''
-              }`}
-              style={{
-                backgroundColor: isEditingControls
-                  ? 'rgba(2, 132, 199, 0.88)'
-                  : theme.panelBg,
-                border: `2px solid ${isEditingControls ? '#38BDF8' : theme.borderColor}`,
-              }}
-            >
-              <Move className="w-3.5 h-3.5" />
-              <span>{isEditingControls ? 'LOCK' : 'DRAG'}</span>
-            </button>
-
-            {/* Circular Bullet / Reload Utility Badge */}
             <button
               type="button"
               tabIndex={-1}
@@ -645,14 +629,14 @@ export const GameHud: React.FC<GameHudProps> = ({
               }}
               aria-label="Reload weapon [R]"
               title="Reload Weapon [R]"
-              className="h-9 px-2.5 flex items-center gap-1.5 rounded-full text-xs font-mono-hud font-bold text-white transition-transform active:scale-95"
+              className="h-8 sm:h-9 px-2.5 flex items-center gap-1 rounded-full text-[11px] font-mono-hud font-bold text-white transition-transform active:scale-95"
               style={{
                 backgroundColor: theme.panelBg,
                 border: `2px solid ${theme.borderColor}`,
               }}
             >
               <RotateCw className="w-3.5 h-3.5" />
-              <span>RLD</span>
+              <span className="hidden sm:inline">RLD</span>
             </button>
 
             <button
@@ -664,7 +648,7 @@ export const GameHud: React.FC<GameHudProps> = ({
               }}
               aria-label="Toggle touch controls"
               title="Toggle touch controls [T]"
-              className="h-9 w-9 flex items-center justify-center rounded-full text-white transition-colors"
+              className="hidden sm:flex h-9 w-9 items-center justify-center rounded-full text-white transition-colors"
               style={{
                 backgroundColor: showTouchControls
                   ? theme.controlInnerBg
@@ -684,123 +668,51 @@ export const GameHud: React.FC<GameHudProps> = ({
               }}
               aria-label={settings.muted ? 'Unmute [M]' : 'Mute [M]'}
               title="Mute / Unmute [M]"
-              className="h-9 w-9 flex items-center justify-center rounded-full text-white transition-colors"
+              className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center rounded-full text-white transition-colors"
               style={{
                 backgroundColor: theme.panelBg,
                 border: `2px solid ${theme.borderColor}`,
               }}
             >
               {settings.muted ? (
-                <VolumeX className="w-4 h-4" />
+                <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               ) : (
-                <Volume2 className="w-4 h-4" />
+                <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               )}
             </button>
           </div>
 
-          {/* Real-Time Top-Right Tactical Minimap styled with the active map's UI theme */}
-          <section
-            role="region"
-            aria-label="Tactical Minimap"
-            data-testid="hud-minimap"
-            className="rounded-sm p-2 w-[216px] shadow-xl pointer-events-auto"
-            style={{
-              backgroundColor: theme.panelBg,
-              border: `2.5px solid ${theme.borderColor}`,
-              backdropFilter: 'blur(4px)',
-            }}
-          >
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-white truncate drop-shadow">
-                  {worldSnapshot.minimap.mapName}
-                </span>
-                <span aria-hidden="true" className="text-white/70 text-[10px]">
-                  ·
-                </span>
-                <span
-                  className="font-mono-hud text-[10px] font-extrabold whitespace-nowrap drop-shadow"
-                  style={{ color: theme.accentColor }}
-                >
-                  {worldSnapshot.minimap.hostileCount} FOE
-                </span>
-              </div>
-
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  onToggleMinimapZoom();
-                }}
-                aria-label="Toggle minimap zoom"
-                title="Toggle minimap zoom [N]"
-                className="px-1.5 py-0.5 rounded-xs bg-black/45 hover:bg-black/65 border border-white/70 font-mono-hud text-[10px] font-bold text-white whitespace-nowrap transition-colors"
-              >
-                {minimapZoomed ? '2X' : '1X'}
-              </button>
-            </div>
-
-            <div
-              className="relative rounded-xs overflow-hidden border border-white/70"
-              style={{ backgroundColor: theme.minimapBg }}
-            >
-              <canvas
-                ref={minimapCanvasRef}
-                width={200}
-                height={80}
-                data-testid="hud-minimap-canvas"
-                className="block w-[200px] h-[80px]"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-2 mt-1 text-[10px] text-white font-semibold drop-shadow">
-              <div className="flex items-center gap-1.5 whitespace-nowrap">
-                <span className="text-amber-300">YOU</span>
-                <span aria-hidden="true">·</span>
-                <span className="text-sky-300">ALLY</span>
-                <span aria-hidden="true">·</span>
-                <span className="text-rose-300">FOE</span>
-              </div>
-              {worldSnapshot.minimap.playerCoords && (
-                <span className="font-mono-hud text-[10px] text-white whitespace-nowrap">
-                  {worldSnapshot.minimap.playerCoords.x},{worldSnapshot.minimap.playerCoords.y}
-                </span>
-              )}
-            </div>
-          </section>
-
-          {/* Compact Kill Feed */}
+          {/* Single latest Kill Feed toast (compact, never stacks down the right side) */}
           {worldSnapshot.killFeed.length > 0 && (
-            <div className="hidden sm:flex flex-col items-end gap-1">
-              {worldSnapshot.killFeed.slice(0, 3).map((k) => (
-                <div
-                  key={k.id}
-                  className="rounded-xs px-2.5 py-1 text-[11px] text-white flex items-center gap-1.5 shadow"
-                  style={{
-                    backgroundColor: theme.panelBg,
-                    border: `1.5px solid ${theme.borderColor}`,
-                  }}
-                >
-                  <span className="font-bold text-amber-200">{k.killerName}</span>
-                  <span className="text-white/80">[{k.weaponLabel}]</span>
-                  <span className="font-bold text-rose-200">{k.victimName}</span>
-                </div>
-              ))}
+            <div
+              key={worldSnapshot.killFeed[0].id}
+              className="rounded-xs px-2 py-0.5 text-[10px] text-white flex items-center gap-1 shadow pointer-events-none"
+              style={{
+                backgroundColor: theme.panelBg,
+                border: `1.5px solid ${theme.borderColor}`,
+              }}
+            >
+              <span className="font-bold text-amber-200 truncate max-w-[75px]">
+                {worldSnapshot.killFeed[0].killerName}
+              </span>
+              <span className="text-white/80">[{worldSnapshot.killFeed[0].weaponLabel}]</span>
+              <span className="font-bold text-rose-200 truncate max-w-[75px]">
+                {worldSnapshot.killFeed[0].victimName}
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Live HUD Control Drag Mode Banner */}
+      {/* HUD Control Edit Banner (Only shown when explicitly launched from Title or Pause Menu) */}
       {isEditingControls && (
         <div
           data-testid="hud-control-edit-banner"
-          className="mx-auto pointer-events-auto px-4 py-2.5 rounded-md bg-slate-950/90 border-2 border-sky-400 text-white shadow-2xl flex flex-wrap items-center gap-3 z-30"
+          className="mx-auto pointer-events-auto px-3.5 py-2 rounded-md bg-slate-950/92 border-2 border-sky-400 text-white shadow-2xl flex flex-wrap items-center gap-2.5 z-30"
         >
-          <div className="flex items-center gap-2 text-xs font-mono-hud font-bold text-sky-300">
-            <Move className="w-4 h-4" />
-            <span>DRAG ANY CONTROL TO REPOSITION (MOVE · FIRE · GRENADE · MELEE · SCOPE)</span>
+          <div className="flex items-center gap-1.5 text-[11px] font-mono-hud font-bold text-sky-300">
+            <Move className="w-3.5 h-3.5" />
+            <span>DRAG ANY CONTROL TO REPOSITION</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -832,7 +744,7 @@ export const GameHud: React.FC<GameHudProps> = ({
       {/* Respawn Center Notice */}
       {player && !player.alive && !isEditingControls && (
         <div
-          className="mx-auto rounded-sm px-6 py-3 text-center shadow-2xl"
+          className="mx-auto rounded-sm px-5 py-2.5 text-center shadow-2xl"
           style={{
             backgroundColor: theme.panelBg,
             border: `2.5px solid ${theme.borderColor}`,
@@ -841,7 +753,7 @@ export const GameHud: React.FC<GameHudProps> = ({
           <div className="text-xs font-extrabold uppercase tracking-wider text-rose-200">
             Killed In Action
           </div>
-          <div className="font-mono-hud text-lg font-bold text-white">
+          <div className="font-mono-hud text-base sm:text-lg font-bold text-white">
             {player.livesRemaining > 0
               ? `Redeploying in ${Math.max(0.1, player.respawnTimer).toFixed(1)}s`
               : 'Out of Lives'}
@@ -849,52 +761,35 @@ export const GameHud: React.FC<GameHudProps> = ({
         </div>
       )}
 
-      {/* DRAGGABLE SCOPE ZOOM BUTTON (5X / 3X / 1X) */}
+      {/* SCOPE ZOOM BUTTON (5X / 3X / 1X) — Never drags during active gameplay */}
       <button
         type="button"
         tabIndex={-1}
         data-testid="hud-scope-zoom-btn"
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
-          buttonDragRef.current = {
-            id: 'scopeBtn',
-            startX: e.clientX,
-            startY: e.clientY,
-            moved: false,
-          };
           if (isEditingControls) {
             setDraggingControlId('scopeBtn');
           }
         }}
         onPointerMove={(e) => {
-          if (buttonDragRef.current.id === 'scopeBtn' && e.buttons > 0) {
-            const dist = Math.hypot(
-              e.clientX - buttonDragRef.current.startX,
-              e.clientY - buttonDragRef.current.startY,
-            );
-            if (isEditingControls || dist > 8) {
-              buttonDragRef.current.moved = true;
-              setDraggingControlId('scopeBtn');
-              moveControlToViewport('scopeBtn', e.clientX, e.clientY);
-            }
+          if (isEditingControls && draggingControlId === 'scopeBtn' && e.buttons > 0) {
+            moveControlToViewport('scopeBtn', e.clientX, e.clientY);
           }
         }}
         onPointerUp={() => {
-          const wasMoved = buttonDragRef.current.moved;
-          buttonDragRef.current = { id: null, startX: 0, startY: 0, moved: false };
           setDraggingControlId(null);
-          if (!wasMoved && !isEditingControls) {
+          if (!isEditingControls) {
             onCycleScopeZoom();
           }
         }}
         onPointerCancel={() => {
-          buttonDragRef.current = { id: null, startX: 0, startY: 0, moved: false };
           setDraggingControlId(null);
         }}
         aria-label={`Cycle weapon scope zoom (${scopePowerLabel})`}
-        title={`Cycle Gun Scope Zoom [Z / Scroll] · Drag to Reposition`}
-        className={`fixed z-20 w-16 h-16 rounded-full flex items-center justify-center shadow-lg pointer-events-auto touch-none ${
-          isEditingControls || draggingControlId === 'scopeBtn'
+        title="Cycle Gun Scope Zoom [Z / Scroll]"
+        className={`absolute z-20 w-12 h-12 sm:w-15 sm:h-15 rounded-full flex items-center justify-center shadow-lg pointer-events-auto touch-none ${
+          isEditingControls
             ? 'ring-4 ring-sky-400 cursor-grab active:cursor-grabbing'
             : 'hover:scale-105 active:scale-95'
         }`}
@@ -906,36 +801,33 @@ export const GameHud: React.FC<GameHudProps> = ({
             scopeZoomLevel >= 3
               ? 'rgba(16, 185, 129, 0.34)'
               : theme.panelBg,
-          border: `3.5px solid ${scopeZoomLevel >= 3 ? theme.accentColor : theme.borderColor}`,
+          border: `3px solid ${scopeZoomLevel >= 3 ? theme.accentColor : theme.borderColor}`,
         }}
       >
         <div
-          className="w-11 h-11 rounded-full border-2 flex flex-col items-center justify-center leading-none"
+          className="w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 flex flex-col items-center justify-center leading-none"
           style={{
             borderColor:
               scopeZoomLevel >= 3 ? theme.accentColor : theme.borderColor,
           }}
         >
-          <span className="font-mono-hud text-sm font-extrabold text-white tracking-wider drop-shadow">
+          <span className="font-mono-hud text-xs sm:text-sm font-extrabold text-white tracking-wider drop-shadow">
             {scopePowerLabel}
           </span>
-          <span className="text-[8px] font-mono-hud font-bold uppercase text-white/80">
-            SCOPE
-          </span>
         </div>
-        <span className="absolute top-1 left-1/2 -translate-x-1/2 w-0.5 h-2 bg-white/90" />
-        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-0.5 h-2 bg-white/90" />
-        <span className="absolute left-1 top-1/2 -translate-y-1/2 w-2 h-0.5 bg-white/90" />
-        <span className="absolute right-1 top-1/2 -translate-y-1/2 w-2 h-0.5 bg-white/90" />
+        <span className="absolute top-0.5 left-1/2 -translate-x-1/2 w-0.5 h-1.5 bg-white/90" />
+        <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-0.5 h-1.5 bg-white/90" />
+        <span className="absolute left-0.5 top-1/2 -translate-y-1/2 w-1.5 h-0.5 bg-white/90" />
+        <span className="absolute right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-0.5 bg-white/90" />
       </button>
 
-      {/* DRAGGABLE TOUCH CONTROLS (MOVE, GRENADE, MELEE, FIRE) */}
+      {/* TOUCH CONTROLS (MOVE, GRENADE, MELEE, FIRE) — Locked in place during gameplay */}
       {(showTouchControls || isEditingControls) && player && (
         <div
-          className="fixed inset-0 pointer-events-none z-20"
+          className="absolute inset-0 pointer-events-none z-20"
           style={{ opacity: isEditingControls ? 1 : settings.controlOpacity }}
         >
-          {/* 1. Double-Ring Movement & Jetpack Pad */}
+          {/* 1. Double-Ring Movement & Jetpack Pad with Movable Inner Thumb Knob */}
           <div
             ref={moveStickRef}
             data-testid="hud-control-moveStick"
@@ -950,20 +842,24 @@ export const GameHud: React.FC<GameHudProps> = ({
             }}
             onPointerMove={(e) => {
               if (e.buttons <= 0) return;
-              if (isEditingControls || draggingControlId === 'moveStick') {
-                moveControlToViewport('moveStick', e.clientX, e.clientY);
+              if (isEditingControls) {
+                if (draggingControlId === 'moveStick') {
+                  moveControlToViewport('moveStick', e.clientX, e.clientY);
+                }
               } else {
                 handleMovePointer(e);
               }
             }}
             onPointerUp={() => {
               setDraggingControlId(null);
+              setMoveKnobOffset({ x: 0, y: 0 });
               touchBridge.current.moveX = 0;
               touchBridge.current.crouchHeld = false;
               touchBridge.current.jetpackHeld = false;
             }}
             onPointerCancel={() => {
               setDraggingControlId(null);
+              setMoveKnobOffset({ x: 0, y: 0 });
               touchBridge.current.moveX = 0;
               touchBridge.current.crouchHeld = false;
               touchBridge.current.jetpackHeld = false;
@@ -974,35 +870,21 @@ export const GameHud: React.FC<GameHudProps> = ({
               top: `${layout.moveStick.yPct}%`,
               transform: 'translate(-50%, -50%)',
               backgroundColor: theme.controlRingBg,
-              border: `6px solid ${theme.borderColor}`,
+              border: `4.5px solid ${theme.borderColor}`,
             }}
-            className={`fixed w-36 h-36 rounded-full flex items-center justify-center touch-none pointer-events-auto shadow-2xl ${
-              isEditingControls || draggingControlId === 'moveStick'
+            className={`absolute w-28 h-28 sm:w-36 sm:h-36 rounded-full flex items-center justify-center touch-none pointer-events-auto shadow-2xl ${
+              isEditingControls
                 ? 'ring-4 ring-sky-400 cursor-grab active:cursor-grabbing'
                 : 'cursor-pointer'
             }`}
           >
-            {/* Corner Drag Grip Handle */}
             <div
-              data-testid="drag-handle-moveStick"
-              title="Drag to reposition Move Stick"
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                moveStickRef.current?.setPointerCapture(e.pointerId);
-                setDraggingControlId('moveStick');
+              className="w-16 h-16 sm:w-22 sm:h-22 rounded-full border-2 border-white/80 flex flex-col items-center justify-center transition-transform duration-75"
+              style={{
+                backgroundColor: theme.controlInnerBg,
+                transform: `translate(${moveKnobOffset.x}px, ${moveKnobOffset.y}px)`,
               }}
-              className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-slate-900/90 border border-sky-400 flex items-center justify-center text-sky-300 cursor-grab active:cursor-grabbing shadow"
             >
-              <Move className="w-3.5 h-3.5" />
-            </div>
-
-            <div
-              className="w-24 h-24 rounded-full border-2 border-white/70 flex flex-col items-center justify-center"
-              style={{ backgroundColor: theme.controlInnerBg }}
-            >
-              <span className="font-mono-hud text-[10px] font-bold uppercase tracking-widest text-white/80">
-                MOVE
-              </span>
               {isEditingControls && (
                 <span className="font-mono-hud text-[9px] text-sky-300">
                   {Math.round(layout.moveStick.xPct)}%,{Math.round(layout.moveStick.yPct)}%
@@ -1011,65 +893,48 @@ export const GameHud: React.FC<GameHudProps> = ({
             </div>
           </div>
 
-          {/* 2. Circular Pineapple Frag Grenade Button with Unlimited ∞ Symbol */}
+          {/* 2. Circular Pineapple Frag Grenade Button */}
           <button
             type="button"
             tabIndex={-1}
             data-testid="hud-control-grenadeBtn"
             onPointerDown={(e) => {
               e.currentTarget.setPointerCapture(e.pointerId);
-              buttonDragRef.current = {
-                id: 'grenadeBtn',
-                startX: e.clientX,
-                startY: e.clientY,
-                moved: false,
-              };
               if (isEditingControls) {
                 setDraggingControlId('grenadeBtn');
               }
             }}
             onPointerMove={(e) => {
-              if (buttonDragRef.current.id === 'grenadeBtn' && e.buttons > 0) {
-                const dist = Math.hypot(
-                  e.clientX - buttonDragRef.current.startX,
-                  e.clientY - buttonDragRef.current.startY,
-                );
-                if (isEditingControls || dist > 8) {
-                  buttonDragRef.current.moved = true;
-                  setDraggingControlId('grenadeBtn');
-                  moveControlToViewport('grenadeBtn', e.clientX, e.clientY);
-                }
+              if (isEditingControls && draggingControlId === 'grenadeBtn' && e.buttons > 0) {
+                moveControlToViewport('grenadeBtn', e.clientX, e.clientY);
               }
             }}
             onPointerUp={() => {
-              const wasMoved = buttonDragRef.current.moved;
-              buttonDragRef.current = { id: null, startX: 0, startY: 0, moved: false };
               setDraggingControlId(null);
-              if (!wasMoved && !isEditingControls) {
+              if (!isEditingControls) {
                 touchBridge.current.triggerGrenade();
               }
             }}
             onPointerCancel={() => {
-              buttonDragRef.current = { id: null, startX: 0, startY: 0, moved: false };
               setDraggingControlId(null);
             }}
             aria-label="Throw Frag Grenade (Unlimited)"
-            title="Throw Frag Grenade [G] · Drag to Reposition"
+            title="Throw Frag Grenade [G]"
             style={{
               left: `${layout.grenadeBtn.xPct}%`,
               top: `${layout.grenadeBtn.yPct}%`,
               transform: 'translate(-50%, -50%)',
               backgroundColor: theme.panelBg,
-              border: `4px solid ${theme.borderColor}`,
+              border: `3.5px solid ${theme.borderColor}`,
             }}
-            className={`fixed w-20 h-20 rounded-full flex items-center justify-center gap-1 pointer-events-auto touch-none shadow-xl ${
-              isEditingControls || draggingControlId === 'grenadeBtn'
+            className={`absolute w-14 h-14 sm:w-18 sm:h-18 rounded-full flex items-center justify-center gap-0.5 pointer-events-auto touch-none shadow-xl ${
+              isEditingControls
                 ? 'ring-4 ring-sky-400 cursor-grab active:cursor-grabbing'
                 : 'active:scale-95'
             }`}
           >
-            <PineappleGrenadeSvg className="w-8 h-10" />
-            <span className="font-mono-hud text-xl font-extrabold text-white drop-shadow">
+            <PineappleGrenadeSvg className="w-6 h-7 sm:w-7 sm:h-8" />
+            <span className="font-mono-hud text-sm sm:text-base font-extrabold text-white drop-shadow">
               ∞
             </span>
           </button>
@@ -1081,60 +946,43 @@ export const GameHud: React.FC<GameHudProps> = ({
             data-testid="hud-control-meleeBtn"
             onPointerDown={(e) => {
               e.currentTarget.setPointerCapture(e.pointerId);
-              buttonDragRef.current = {
-                id: 'meleeBtn',
-                startX: e.clientX,
-                startY: e.clientY,
-                moved: false,
-              };
               if (isEditingControls) {
                 setDraggingControlId('meleeBtn');
               }
             }}
             onPointerMove={(e) => {
-              if (buttonDragRef.current.id === 'meleeBtn' && e.buttons > 0) {
-                const dist = Math.hypot(
-                  e.clientX - buttonDragRef.current.startX,
-                  e.clientY - buttonDragRef.current.startY,
-                );
-                if (isEditingControls || dist > 8) {
-                  buttonDragRef.current.moved = true;
-                  setDraggingControlId('meleeBtn');
-                  moveControlToViewport('meleeBtn', e.clientX, e.clientY);
-                }
+              if (isEditingControls && draggingControlId === 'meleeBtn' && e.buttons > 0) {
+                moveControlToViewport('meleeBtn', e.clientX, e.clientY);
               }
             }}
             onPointerUp={() => {
-              const wasMoved = buttonDragRef.current.moved;
-              buttonDragRef.current = { id: null, startX: 0, startY: 0, moved: false };
               setDraggingControlId(null);
-              if (!wasMoved && !isEditingControls) {
+              if (!isEditingControls) {
                 touchBridge.current.triggerMelee();
               }
             }}
             onPointerCancel={() => {
-              buttonDragRef.current = { id: null, startX: 0, startY: 0, moved: false };
               setDraggingControlId(null);
             }}
             aria-label="Melee Strike [E]"
-            title="Melee Strike [E] · Drag to Reposition"
+            title="Melee Strike [E]"
             style={{
               left: `${layout.meleeBtn.xPct}%`,
               top: `${layout.meleeBtn.yPct}%`,
               transform: 'translate(-50%, -50%)',
               backgroundColor: theme.panelBg,
-              border: `4px solid ${theme.borderColor}`,
+              border: `3.5px solid ${theme.borderColor}`,
             }}
-            className={`fixed w-20 h-20 rounded-full flex items-center justify-center pointer-events-auto touch-none shadow-xl ${
-              isEditingControls || draggingControlId === 'meleeBtn'
+            className={`absolute w-14 h-14 sm:w-18 sm:h-18 rounded-full flex items-center justify-center pointer-events-auto touch-none shadow-xl ${
+              isEditingControls
                 ? 'ring-4 ring-sky-400 cursor-grab active:cursor-grabbing'
                 : 'active:scale-95'
             }`}
           >
-            <ClenchedFistSvg className="w-11 h-11" />
+            <ClenchedFistSvg className="w-8 h-8 sm:w-10 sm:h-10" />
           </button>
 
-          {/* 4. Overlapping Red-Tinted Dual-Ring Aim & Fire Pad */}
+          {/* 4. Overlapping Red-Tinted Dual-Ring Aim & Fire Pad with Movable Knob */}
           <div
             ref={aimStickRef}
             data-testid="hud-control-fireStick"
@@ -1149,18 +997,22 @@ export const GameHud: React.FC<GameHudProps> = ({
             }}
             onPointerMove={(e) => {
               if (e.buttons <= 0) return;
-              if (isEditingControls || draggingControlId === 'fireStick') {
-                moveControlToViewport('fireStick', e.clientX, e.clientY);
+              if (isEditingControls) {
+                if (draggingControlId === 'fireStick') {
+                  moveControlToViewport('fireStick', e.clientX, e.clientY);
+                }
               } else {
                 handleAimPointer(e);
               }
             }}
             onPointerUp={() => {
               setDraggingControlId(null);
+              setFireKnobOffset({ x: 0, y: 0 });
               touchBridge.current.fireHeld = false;
             }}
             onPointerCancel={() => {
               setDraggingControlId(null);
+              setFireKnobOffset({ x: 0, y: 0 });
               touchBridge.current.fireHeld = false;
             }}
             aria-label="Aim and Fire pad"
@@ -1169,50 +1021,41 @@ export const GameHud: React.FC<GameHudProps> = ({
               top: `${layout.fireStick.yPct}%`,
               transform: 'translate(-50%, -50%)',
             }}
-            className={`fixed w-40 h-40 flex items-center justify-center touch-none pointer-events-auto ${
-              isEditingControls || draggingControlId === 'fireStick'
+            className={`absolute w-32 h-32 sm:w-40 sm:h-40 flex items-center justify-center touch-none pointer-events-auto ${
+              isEditingControls
                 ? 'ring-4 ring-sky-400 rounded-full cursor-grab active:cursor-grabbing'
                 : 'cursor-crosshair'
             }`}
           >
-            {/* Corner Drag Grip Handle */}
+            {/* Upper-Left Secondary Translucent Red Ring (Like Mini Militia reference) */}
             <div
-              data-testid="drag-handle-fireStick"
-              title="Drag to reposition Fire Stick"
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                aimStickRef.current?.setPointerCapture(e.pointerId);
-                setDraggingControlId('fireStick');
-              }}
-              className="absolute -top-2 -left-2 z-20 w-7 h-7 rounded-full bg-slate-900/90 border border-sky-400 flex items-center justify-center text-sky-300 cursor-grab active:cursor-grabbing shadow"
-            >
-              <Move className="w-3.5 h-3.5" />
-            </div>
-
-            {/* Upper-Left Secondary Translucent Red Ring */}
-            <div
-              className="absolute top-0 left-0 w-24 h-24 rounded-full pointer-events-none"
+              className="absolute top-0 left-0 w-18 h-18 sm:w-24 sm:h-24 rounded-full pointer-events-none"
               style={{
-                backgroundColor: 'rgba(185, 74, 72, 0.45)',
-                border: `4px solid ${theme.borderColor}`,
+                backgroundColor: 'rgba(185, 74, 72, 0.38)',
+                border: `3.5px solid ${theme.borderColor}`,
               }}
             />
             {/* Main Lower-Right Red Fire Ring */}
             <div
-              className="absolute bottom-1 right-1 w-32 h-32 rounded-full flex flex-col items-center justify-center shadow-2xl"
+              className="absolute bottom-1 right-1 w-24 h-24 sm:w-32 sm:h-32 rounded-full flex flex-col items-center justify-center shadow-2xl"
               style={{
-                backgroundColor: 'rgba(168, 58, 56, 0.62)',
-                border: `6px solid ${theme.borderColor}`,
+                backgroundColor: 'rgba(168, 58, 56, 0.56)',
+                border: `4.5px solid ${theme.borderColor}`,
               }}
             >
-              <span className="font-mono-hud text-[10px] font-bold uppercase tracking-widest text-white/85">
-                FIRE
-              </span>
-              {isEditingControls && (
-                <span className="font-mono-hud text-[9px] text-sky-200">
-                  {Math.round(layout.fireStick.xPct)}%,{Math.round(layout.fireStick.yPct)}%
-                </span>
-              )}
+              {/* Movable inner fire thumb puck */}
+              <div
+                className="w-12 h-12 sm:w-16 sm:h-16 rounded-full border-2 border-white/80 bg-red-900/60 flex items-center justify-center transition-transform duration-75"
+                style={{
+                  transform: `translate(${fireKnobOffset.x}px, ${fireKnobOffset.y}px)`,
+                }}
+              >
+                {isEditingControls && (
+                  <span className="font-mono-hud text-[9px] text-sky-200">
+                    {Math.round(layout.fireStick.xPct)}%,{Math.round(layout.fireStick.yPct)}%
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>

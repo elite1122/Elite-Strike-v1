@@ -7,7 +7,7 @@ import {
 } from './types';
 
 const PROFILE_KEY = 'elitestrike_profile_v2';
-const SETTINGS_KEY = 'elitestrike_settings_v1';
+const SETTINGS_KEY = 'elitestrike_settings_v2';
 
 export const DEFAULT_PROFILE: PlayerProfile = {
   callsign: 'Striker-01',
@@ -26,11 +26,11 @@ export const DEFAULT_PROFILE: PlayerProfile = {
 };
 
 export const DEFAULT_CONTROL_LAYOUT: CustomControlLayout = {
-  moveStick: { xPct: 9, yPct: 83 },
-  grenadeBtn: { xPct: 21, yPct: 87 },
-  meleeBtn: { xPct: 77, yPct: 87 },
-  fireStick: { xPct: 90, yPct: 83 },
-  scopeBtn: { xPct: 5, yPct: 20 },
+  moveStick: { xPct: 12, yPct: 76 },
+  grenadeBtn: { xPct: 26, yPct: 84 },
+  meleeBtn: { xPct: 72, yPct: 84 },
+  fireStick: { xPct: 88, yPct: 76 },
+  scopeBtn: { xPct: 7, yPct: 34 },
 };
 
 export function clampControlPosition(pos: ControlPosition): ControlPosition {

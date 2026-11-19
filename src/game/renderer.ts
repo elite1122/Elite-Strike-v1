@@ -392,10 +392,18 @@ export class ArenaRenderer {
       ? getScopeZoomProfile(2)
       : getScopeZoomProfile(scopeZoomLevel);
 
+    // Normalize camera scale to a 1380x780 virtual battlefield so mobile phone screens
+    // (e.g. 800x360 landscape) see the exact same wide multi-level arena as desktop monitors
+    const viewportBaseScale = Math.min(
+      1.02,
+      Math.max(0.32, Math.min(viewW / 1380, viewH / 780)),
+    );
+    const targetScale = zoomProfile.cameraScale * viewportBaseScale;
+
     // Smooth camera scale transition per weapon scope zoom (1X..5X)
     const damp = 1 - Math.exp(-8.5 * Math.min(dt, 0.05));
-    this.camScale += (zoomProfile.cameraScale - this.camScale) * damp;
-    const scale = Math.max(0.55, Math.min(1.3, this.camScale));
+    this.camScale += (targetScale - this.camScale) * damp;
+    const scale = Math.max(0.2, Math.min(1.3, this.camScale));
 
     // Camera target calculation with scope directional look-ahead
     let targetX = map.width / 2;
