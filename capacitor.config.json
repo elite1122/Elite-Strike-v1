@@ -1,0 +1,9 @@
+{
+  "appId": "com.elitestrike.jetpackshooter",
+  "appName": "EliteStrike",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

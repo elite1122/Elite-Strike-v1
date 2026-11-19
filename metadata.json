@@ -1,0 +1,6 @@
+{
+  "name": "EliteStrike",
+  "description": "2D side-scrolling tactical military shooter with jetpack physics, multi-level arenas, weapon loadouts, AI skirmishes, and real-time WebSocket multiplayer rooms.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

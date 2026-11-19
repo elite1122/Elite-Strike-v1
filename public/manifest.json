@@ -1,0 +1,33 @@
+{
+  "id": "/",
+  "name": "EliteStrike — 2D Tactical Jetpack Shooter",
+  "short_name": "EliteStrike",
+  "description": "2D side-scrolling tactical military shooter with jetpack physics, 5 multi-level battle zones, 12 weapons, AI skirmishes, and real-time multiplayer rooms.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "theme_color": "#0B0E14",
+  "background_color": "#0B0E14",
+  "categories": ["games", "action", "shooter"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
